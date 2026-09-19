@@ -153,7 +153,7 @@ class LiveTradingBot:
 
 
 async def run_bot(dry_run: bool = True):
-    """Run the trading bot."""
+    """Run the trading bot with live price streaming and auto-execution."""
     try:
         # Initialize client
         client = KalshiClient()
@@ -175,19 +175,82 @@ async def run_bot(dry_run: bool = True):
         print("\n" + "="*60)
         print("KALSHI LIVE TRADING BOT")
         print(f"Mode: {'DRY RUN (no orders)' if dry_run else 'LIVE'}")
-        print("="*60 + "\n")
+        print("="*60)
+        print(f"Checking markets every 5 seconds...")
+        print("Press Ctrl+C to stop.\n")
         
-        # Main loop (in real use, this would stream prices and execute)
-        print("Bot running. Press Ctrl+C to stop.")
-        bot.print_status()
+        # Get initial markets
+        markets = client.get_markets(limit=50)
+        print(f"✓ Found {len(markets)} markets\n")
         
-        # Keep running
+        loop_count = 0
+        trades_placed = 0
+        
+        # Main trading loop
         while True:
-            await asyncio.sleep(60)
-            bot.print_status()
+            loop_count += 1
+            
+            try:
+                # Check first 20 markets for trading opportunities
+                for market in markets[:20]:
+                    ticker = market.get('ticker')
+                    title = market.get('title', 'N/A')
+                    
+                    try:
+                        # Get live prices
+                        prices = client.get_market_prices(ticker)
+                        yes_price = prices.get('yes_price', 0)
+                        no_price = prices.get('no_price', 0)
+                        
+                        if yes_price == 0 or no_price == 0:
+                            continue
+                        
+                        # Use tennis model for all sports markets
+                        if any(x in title.lower() for x in ['tennis', 'match', 'vs', 'davis', 'atp']):
+                            model = TennisMarkovModel(0.65, 0.68)
+                            fair_value = model.match_win_prob(0.65, 0.68, best_of_3=True)
+                            edge = fair_value - yes_price
+                            
+                            # Trade if edge is good enough (5%+)
+                            if abs(edge) >= 0.05 and bot.can_trade():
+                                side = "Yes" if edge > 0 else "No"
+                                entry_price = yes_price if edge > 0 else no_price
+                                
+                                if not dry_run:
+                                    # LIVE: Place real order
+                                    success = bot.place_trade(
+                                        ticker=ticker,
+                                        side=side,
+                                        entry_price=entry_price,
+                                        fair_value=fair_value,
+                                        quantity=1
+                                    )
+                                    if success:
+                                        trades_placed += 1
+                                else:
+                                    # DRY RUN: Simulate trade
+                                    print(f"[DRY RUN] Would trade {side} @ {entry_price:.2f} | Edge: {edge:+.1%} | {title[:40]}")
+                    
+                    except Exception as e:
+                        # Skip markets with errors
+                        pass
+                
+                # Print status every 12 loops (60 seconds)
+                if loop_count % 12 == 0:
+                    bot.print_status()
+                    if trades_placed > 0:
+                        print(f"Trades placed in this session: {trades_placed}\n")
+                
+                # Wait 5 seconds before next loop
+                await asyncio.sleep(5)
+            
+            except Exception as e:
+                print(f"⚠️  Error in loop: {e}")
+                await asyncio.sleep(10)
     
     except KeyboardInterrupt:
         print("\n✓ Bot stopped")
+        print(f"Total trades placed: {trades_placed}")
     except Exception as e:
         print(f"✗ Error: {e}")
         sys.exit(1)
