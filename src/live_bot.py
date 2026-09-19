@@ -207,13 +207,13 @@ async def run_bot(dry_run: bool = True):
                         if yes_price == 0 or no_price == 0:
                             continue
                         
-                        # Check ANY market (not just tennis)
-                        # Use simple 50% fair value for demo
-                        fair_value = 0.50
+                        # Check ANY market
+                        # Fair value = average of yes/no (market equilibrium)
+                        fair_value = (yes_price + (1 - no_price)) / 2
                         edge = fair_value - yes_price
                         
-                        # Trade if edge is good enough (2%+ for demo)
-                        if abs(edge) >= 0.02 and bot.can_trade():
+                        # Trade if edge is good enough (1%+ for demo)
+                        if abs(edge) >= 0.01 and bot.can_trade():
                             side = "Yes" if edge > 0 else "No"
                             entry_price = yes_price if edge > 0 else no_price
                             
