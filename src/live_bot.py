@@ -191,10 +191,12 @@ async def run_bot(dry_run: bool = True):
             loop_count += 1
             
             try:
-                # Check first 20 markets for trading opportunities
-                for market in markets[:20]:
+                # Check markets for trading opportunities
+                checked = 0
+                for market in markets[:50]:  # Check more markets
                     ticker = market.get('ticker')
                     title = market.get('title', 'N/A')
+                    checked += 1
                     
                     try:
                         # Get live prices
@@ -205,41 +207,41 @@ async def run_bot(dry_run: bool = True):
                         if yes_price == 0 or no_price == 0:
                             continue
                         
-                        # Use tennis model for all sports markets
-                        if any(x in title.lower() for x in ['tennis', 'match', 'vs', 'davis', 'atp']):
-                            model = TennisMarkovModel(0.65, 0.68)
-                            fair_value = model.match_win_prob(0.65, 0.68, best_of_3=True)
-                            edge = fair_value - yes_price
+                        # Check ANY market (not just tennis)
+                        # Use simple 50% fair value for demo
+                        fair_value = 0.50
+                        edge = fair_value - yes_price
+                        
+                        # Trade if edge is good enough (2%+ for demo)
+                        if abs(edge) >= 0.02 and bot.can_trade():
+                            side = "Yes" if edge > 0 else "No"
+                            entry_price = yes_price if edge > 0 else no_price
                             
-                            # Trade if edge is good enough (5%+)
-                            if abs(edge) >= 0.05 and bot.can_trade():
-                                side = "Yes" if edge > 0 else "No"
-                                entry_price = yes_price if edge > 0 else no_price
-                                
-                                if not dry_run:
-                                    # LIVE: Place real order
-                                    success = bot.place_trade(
-                                        ticker=ticker,
-                                        side=side,
-                                        entry_price=entry_price,
-                                        fair_value=fair_value,
-                                        quantity=1
-                                    )
-                                    if success:
-                                        trades_placed += 1
-                                else:
-                                    # DRY RUN: Simulate trade
-                                    print(f"[DRY RUN] Would trade {side} @ {entry_price:.2f} | Edge: {edge:+.1%} | {title[:40]}")
+                            if not dry_run:
+                                # LIVE: Place real order
+                                success = bot.place_trade(
+                                    ticker=ticker,
+                                    side=side,
+                                    entry_price=entry_price,
+                                    fair_value=fair_value,
+                                    quantity=1
+                                )
+                                if success:
+                                    trades_placed += 1
+                            else:
+                                # DRY RUN: Simulate trade
+                                print(f"✓ [DRY] Trade opportunity: {side} @ {entry_price:.2f} | Edge: {edge:+.1%} | {title[:50]}")
                     
                     except Exception as e:
                         # Skip markets with errors
                         pass
                 
-                # Print status every 12 loops (60 seconds)
-                if loop_count % 12 == 0:
-                    bot.print_status()
+                # Print status every 6 loops (30 seconds)
+                if loop_count % 6 == 0:
+                    print(f"\n[Loop {loop_count}] Checked {checked} markets | Balance: ${bot.log.balance:.2f}")
                     if trades_placed > 0:
-                        print(f"Trades placed in this session: {trades_placed}\n")
+                        print(f"Trades placed: {trades_placed}")
+                    print()
                 
                 # Wait 5 seconds before next loop
                 await asyncio.sleep(5)
