@@ -207,30 +207,60 @@ async def run_bot(dry_run: bool = True):
                         if yes_price == 0 or no_price == 0:
                             continue
                         
-                        # Check ANY market
-                        # Fair value = average of yes/no (market equilibrium)
-                        fair_value = (yes_price + (1 - no_price)) / 2
-                        edge = fair_value - yes_price
+                        # Check if it's BTC 15-min contract
+                        is_btc = 'btc' in ticker.lower() or 'bitcoin' in title.lower()
                         
-                        # Trade if edge is good enough (1%+ for demo)
-                        if abs(edge) >= 0.01 and bot.can_trade():
-                            side = "Yes" if edge > 0 else "No"
-                            entry_price = yes_price if edge > 0 else no_price
+                        if is_btc and 'above' in title.lower():
+                            # BTC volatility model
+                            crypto_model = CryptoVolatilityModel(volatility_pct_per_15min=1.5)
                             
-                            if not dry_run:
-                                # LIVE: Place real order
-                                success = bot.place_trade(
-                                    ticker=ticker,
-                                    side=side,
-                                    entry_price=entry_price,
-                                    fair_value=fair_value,
-                                    quantity=1
-                                )
-                                if success:
-                                    trades_placed += 1
-                            else:
-                                # DRY RUN: Simulate trade
-                                print(f"✓ [DRY] Trade opportunity: {side} @ {entry_price:.2f} | Edge: {edge:+.1%} | {title[:50]}")
+                            # Extract target price from title (rough estimate)
+                            # For now, assume 50% fair value (neutral)
+                            fair_value = 0.50
+                            edge = fair_value - yes_price
+                            
+                            # Trade BTC if edge >= 3% (crypto is volatile)
+                            if abs(edge) >= 0.03 and bot.can_trade():
+                                side = "Yes" if edge > 0 else "No"
+                                entry_price = yes_price if edge > 0 else no_price
+                                
+                                if not dry_run:
+                                    success = bot.place_trade(
+                                        ticker=ticker,
+                                        side=side,
+                                        entry_price=entry_price,
+                                        fair_value=fair_value,
+                                        quantity=2  # Larger for crypto
+                                    )
+                                    if success:
+                                        trades_placed += 1
+                                else:
+                                    print(f"✓ [BTC] {side} @ {entry_price:.2f} | Edge: {edge:+.1%} | {title[:60]}")
+                        else:
+                            # Regular markets (sports, politics, etc)
+                            # Fair value = average of yes/no (market equilibrium)
+                            fair_value = (yes_price + (1 - no_price)) / 2
+                            edge = fair_value - yes_price
+                            
+                            # Trade if edge is good enough (1%+ for demo)
+                            if abs(edge) >= 0.01 and bot.can_trade():
+                                side = "Yes" if edge > 0 else "No"
+                                entry_price = yes_price if edge > 0 else no_price
+                                
+                                if not dry_run:
+                                    # LIVE: Place real order
+                                    success = bot.place_trade(
+                                        ticker=ticker,
+                                        side=side,
+                                        entry_price=entry_price,
+                                        fair_value=fair_value,
+                                        quantity=1
+                                    )
+                                    if success:
+                                        trades_placed += 1
+                                else:
+                                    # DRY RUN: Simulate trade
+                                    print(f"✓ [DRY] Trade opportunity: {side} @ {entry_price:.2f} | Edge: {edge:+.1%} | {title[:50]}")
                     
                     except Exception as e:
                         # Skip markets with errors
